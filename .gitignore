@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# The sandbox workspace is throwaway data, not source code
+workspace/
