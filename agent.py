@@ -16,12 +16,16 @@ Run with:  python agent.py "your task in plain words"
 
 import json
 import sys
+import time
+from datetime import datetime
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from decision_log import record
 from reviewer import review
 from tools import TOOLS, describe_action, run_tool, who_runs
+from workspace_diff import compare, describe, snapshot
 
 load_dotenv()
 client = OpenAI()
@@ -47,10 +51,24 @@ def say(who: str, text: str) -> None:
         print(f"{label:<17} {line}")
 
 
+def run_and_compare(name: str, arguments: dict) -> tuple[str, dict]:
+    """Carry out an approved action, and report what it changed in the workspace."""
+    before = snapshot()
+    result = run_tool(name, arguments)
+    changes = compare(before, snapshot())
+    say(who_runs(name), result)
+    say("Program", f"Workspace check: {describe(changes)}")
+    return result, changes
+
+
 def run_agent(task: str) -> None:
     # The conversation is the model's only memory. It starts with the task
     # and grows by one proposal and one result on every turn of the loop.
     conversation = [{"role": "user", "content": task}]
+
+    # Identifies this run in the decision log, and counts its actions.
+    run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+    action_number = 0
 
     for step in range(1, MAX_STEPS + 1):
         response = client.responses.create(
@@ -74,28 +92,50 @@ def run_agent(task: str) -> None:
         for proposal in proposals:
             name = proposal.name
             arguments = json.loads(proposal.arguments)
-            say("Agent model", f"Step {step}, proposes {describe_action(name, arguments)}")
+            action_number += 1
+            say("Agent model", f"Action {action_number}, proposes {describe_action(name, arguments)}")
 
-            # The reviewer judges the proposal before anything runs.
+            # The reviewer judges the proposal before anything runs. Time how long it takes.
+            started = time.perf_counter()
             verdict = review(name, arguments, task=task if REVIEWER_SEES_TASK else None)
+            review_seconds = round(time.perf_counter() - started, 2)
             say("Reviewer model", f"{verdict.decision}: {verdict.reason}")
 
+            changes = None  # stays None when the action does not run
+
             if verdict.decision == "allow":
-                result = run_tool(name, arguments)
-                say(who_runs(name), result)
+                result, changes = run_and_compare(name, arguments)
+                outcome = "ran"
             elif verdict.decision == "block":
                 result = f"This action was blocked and did not run. Reason: {verdict.reason}"
+                outcome = "blocked"
                 say("Program", "Action not run. Telling the agent model it was blocked.")
             else:  # "ask": the person decides
                 answer = input(f"{'[Program]':<17} Allow this action? Type y to allow, anything else to refuse: ")
                 if answer.strip().lower() == "y":
                     say("Person", "Allowed.")
-                    result = run_tool(name, arguments)
-                    say(who_runs(name), result)
+                    result, changes = run_and_compare(name, arguments)
+                    outcome = "ran after the person allowed it"
                 else:
                     say("Person", "Refused.")
                     result = "The person refused this action, so it did not run."
+                    outcome = "refused by the person"
                     say("Program", "Action not run. Telling the agent model it was refused.")
+
+            # Write this action to the decision log, whether or not it ran.
+            record(
+                run_id=run_id,
+                action_number=action_number,
+                task=task,
+                tool=name,
+                arguments=arguments,
+                reviewer_saw_task=REVIEWER_SEES_TASK,
+                decision=verdict.decision,
+                reason=verdict.reason,
+                review_seconds=review_seconds,
+                outcome=outcome,
+                workspace_changes=changes,
+            )
 
             print()
 
