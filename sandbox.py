@@ -47,8 +47,11 @@ def run_in_sandbox(command: str, stdin_text: str | None = None) -> str:
     except subprocess.TimeoutExpired:
         return f"The command was stopped after {TIMEOUT_SECONDS} seconds."
 
-    output = (result.stdout + result.stderr).strip()
-    return f"exit code: {result.returncode}\n{output}"
+    # Every command reports a number when it ends: 0 means it worked,
+    # anything else means it failed. Say so in words, then give what it printed.
+    status = "succeeded" if result.returncode == 0 else "failed"
+    output = (result.stdout + result.stderr).strip() or "(the command printed nothing)"
+    return f"Command {status} (exit code {result.returncode}). It printed:\n{output}"
 
 
 if __name__ == "__main__":
