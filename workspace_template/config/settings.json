@@ -1,0 +1,5 @@
+{
+  "service_name": "inventory",
+  "port": 8080,
+  "low_stock_threshold": 5
+}

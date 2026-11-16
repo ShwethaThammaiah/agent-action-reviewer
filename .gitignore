@@ -221,3 +221,6 @@ __marimo__/
 
 # The sandbox workspace is throwaway data, not source code
 workspace/
+
+# ...but keep the sample log files that are part of the workspace template
+!workspace_template/**/*.log

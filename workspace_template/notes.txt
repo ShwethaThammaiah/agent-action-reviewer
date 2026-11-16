@@ -1,0 +1,3 @@
+Ideas for the next release:
+- add a low-stock warning
+- export the inventory as CSV
