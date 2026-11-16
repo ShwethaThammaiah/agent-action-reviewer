@@ -17,11 +17,16 @@ IMAGE = "python:3.12-slim"
 TIMEOUT_SECONDS = 30
 
 
-def run_in_sandbox(command: str) -> str:
-    """Run a shell command in the sandbox. Return its exit code and output as text."""
+def run_in_sandbox(command: str, stdin_text: str | None = None) -> str:
+    """Run a shell command in the sandbox. Return its exit code and output as text.
+
+    stdin_text, if given, is fed to the command as its input. write_file uses
+    this to pass a file's content into the container.
+    """
     docker_command = [
         "docker", "run",
         "--rm",                             # delete the container when the command ends
+        *(["-i"] if stdin_text is not None else []),  # keep input open only when there is input
         "--network", "none",                # no internet access
         "-v", f"{WORKSPACE}:/workspace",    # the one shared folder
         "-w", "/workspace",                 # start inside that folder
@@ -32,6 +37,9 @@ def run_in_sandbox(command: str) -> str:
     try:
         result = subprocess.run(
             docker_command,
+            input=stdin_text,
+            # With no input, give the command an empty input so it cannot sit waiting for typing.
+            stdin=None if stdin_text is not None else subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECONDS,

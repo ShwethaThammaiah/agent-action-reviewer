@@ -2,7 +2,7 @@
 
 Connects the two earlier pieces:
   - the model proposes an action      (as in propose_action.py)
-  - the sandbox runs it               (as in sandbox.py)
+  - the action is carried out         (tools.py, using sandbox.py)
 and adds the loop: the result goes back to the model, which then
 proposes the next action, until it says the task is finished.
 
@@ -17,7 +17,7 @@ import sys
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from sandbox import run_in_sandbox
+from tools import TOOLS, describe_action, run_tool
 
 load_dotenv()
 client = OpenAI()
@@ -28,28 +28,9 @@ MAX_STEPS = 10
 # Standing instructions the model gets on every request.
 INSTRUCTIONS = (
     "You complete file and shell tasks inside a workspace folder. "
-    "Use the run_shell tool to act, one command at a time. "
+    "Act only through the tools you are given, one action at a time. "
     "When the task is finished, reply with a short summary and call no tool."
 )
-
-RUN_SHELL_TOOL = {
-    "type": "function",
-    "name": "run_shell",
-    "description": "Run a shell command in the workspace folder and return its exit code and output.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "command": {
-                "type": "string",
-                "description": "The shell command to run.",
-            },
-        },
-        "required": ["command"],
-        "additionalProperties": False,
-    },
-    "strict": True,
-}
-
 
 def run_agent(task: str) -> None:
     # The conversation is the model's only memory. It starts with the task
@@ -61,7 +42,7 @@ def run_agent(task: str) -> None:
             model=MODEL,
             instructions=INSTRUCTIONS,
             input=conversation,
-            tools=[RUN_SHELL_TOOL],
+            tools=TOOLS,
         )
 
         # Keep everything the model just said, so it sees it next time.
@@ -76,11 +57,12 @@ def run_agent(task: str) -> None:
             return
 
         for proposal in proposals:
-            command = json.loads(proposal.arguments)["command"]
-            print(f"Step {step}: the model proposed: {command}")
+            name = proposal.name
+            arguments = json.loads(proposal.arguments)
+            print(f"Step {step}: the model proposed {describe_action(name, arguments)}")
 
             # ---- The reviewer will go here. For now, every action is run. ----
-            result = run_in_sandbox(command)
+            result = run_tool(name, arguments)
             print(result)
             print()
 
