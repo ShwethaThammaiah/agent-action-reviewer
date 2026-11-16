@@ -73,6 +73,11 @@ def describe_action(name: str, arguments: dict) -> str:
     return f"{name}: {arguments}"
 
 
+def who_runs(name: str) -> str:
+    """Which component carries out this tool: the sandbox, or this program itself."""
+    return "Program" if name == "call_url" else "Sandbox"
+
+
 def run_tool(name: str, arguments: dict) -> str:
     """Carry out one action and return the result as text for the model."""
     if name == "run_shell":

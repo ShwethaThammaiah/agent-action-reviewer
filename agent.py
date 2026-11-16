@@ -6,7 +6,10 @@ Connects the two earlier pieces:
 and adds the loop: the result goes back to the model, which then
 proposes the next action, until it says the task is finished.
 
-There is no reviewer yet. Every proposed action is run.
+Before any action is carried out, the reviewer judges it (reviewer.py):
+  allow -> the action runs
+  block -> the action does not run, and the agent is told why
+  ask   -> the person at the terminal decides
 
 Run with:  python agent.py "your task in plain words"
 """
@@ -17,7 +20,8 @@ import sys
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from tools import TOOLS, describe_action, run_tool
+from reviewer import review
+from tools import TOOLS, describe_action, run_tool, who_runs
 
 load_dotenv()
 client = OpenAI()
@@ -25,12 +29,23 @@ client = OpenAI()
 MODEL = "gpt-5.5"
 MAX_STEPS = 10
 
+# True: the reviewer is shown the person's task as well as the action.
+# False: the reviewer sees only the action.
+REVIEWER_SEES_TASK = True
+
 # Standing instructions the model gets on every request.
 INSTRUCTIONS = (
     "You complete file and shell tasks inside a workspace folder. "
     "Act only through the tools you are given, one action at a time. "
     "When the task is finished, reply with a short summary and call no tool."
 )
+
+def say(who: str, text: str) -> None:
+    """Print text with a label showing which component it came from."""
+    label = f"[{who}]"
+    for line in (text.splitlines() or [""]):
+        print(f"{label:<17} {line}")
+
 
 def run_agent(task: str) -> None:
     # The conversation is the model's only memory. It starts with the task
@@ -52,18 +67,36 @@ def run_agent(task: str) -> None:
 
         # No proposal means the model considers the task finished.
         if not proposals:
-            print("Agent finished:")
-            print(f"  {response.output_text}")
+            say("Agent model", "Task finished. Summary:")
+            say("Agent model", response.output_text)
             return
 
         for proposal in proposals:
             name = proposal.name
             arguments = json.loads(proposal.arguments)
-            print(f"Step {step}: the model proposed {describe_action(name, arguments)}")
+            say("Agent model", f"Step {step}, proposes {describe_action(name, arguments)}")
 
-            # ---- The reviewer will go here. For now, every action is run. ----
-            result = run_tool(name, arguments)
-            print(result)
+            # The reviewer judges the proposal before anything runs.
+            verdict = review(name, arguments, task=task if REVIEWER_SEES_TASK else None)
+            say("Reviewer model", f"{verdict.decision}: {verdict.reason}")
+
+            if verdict.decision == "allow":
+                result = run_tool(name, arguments)
+                say(who_runs(name), result)
+            elif verdict.decision == "block":
+                result = f"This action was blocked and did not run. Reason: {verdict.reason}"
+                say("Program", "Action not run. Telling the agent model it was blocked.")
+            else:  # "ask": the person decides
+                answer = input(f"{'[Program]':<17} Allow this action? Type y to allow, anything else to refuse: ")
+                if answer.strip().lower() == "y":
+                    say("Person", "Allowed.")
+                    result = run_tool(name, arguments)
+                    say(who_runs(name), result)
+                else:
+                    say("Person", "Refused.")
+                    result = "The person refused this action, so it did not run."
+                    say("Program", "Action not run. Telling the agent model it was refused.")
+
             print()
 
             # Hand the result back to the model, tied to the proposal it answers.
@@ -73,11 +106,11 @@ def run_agent(task: str) -> None:
                 "output": result,
             })
 
-    print(f"Stopped: reached the limit of {MAX_STEPS} steps without finishing.")
+    say("Program", f"Stopped: reached the limit of {MAX_STEPS} steps without finishing.")
 
 
 if __name__ == "__main__":
     task = sys.argv[1] if len(sys.argv) > 1 else "List the files in the workspace."
-    print(f"Task: {task}")
+    say("Person", f"Task: {task}")
     print()
     run_agent(task)
