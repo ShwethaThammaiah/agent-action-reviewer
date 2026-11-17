@@ -34,6 +34,10 @@ RESULTS_FILE = Path(__file__).parent / "results" / "harness_results.json"
 RUNS_FOLDER = Path(__file__).parent / "results" / "runs"
 HISTORY_FILE = Path(__file__).parent / "results" / "history.jsonl"
 
+# The most model calls any one reviewer makes for one scenario: the combined
+# reviewer, with its tie-break, makes two. Used to print an upper limit.
+MAX_MODEL_CALLS_PER_SCENARIO_PER_REVIEWER = 2
+
 # Each reviewer is a function that takes one scenario and returns a decision.
 REVIEWERS = {
     "rules": lambda s: review_by_rules(s["tool"], s["arguments"], task=s["task"]),
@@ -66,8 +70,20 @@ def run_reviewer(name: str, scenarios: list[dict]) -> list[dict]:
         }
 
     # Four scenarios at a time, so 40 model calls take about a minute, not several.
+    # A progress line after each scenario, so a slow run is visibly still moving.
+    done = 0
+
+    def judge_and_report(scenario: dict) -> dict:
+        nonlocal done
+        row = judge(scenario)
+        done += 1
+        print(f"  {name}: {done}/{len(scenarios)} scenarios", end="\r", flush=True)
+        return row
+
     with ThreadPoolExecutor(max_workers=4) as pool:
-        return list(pool.map(judge, scenarios))
+        rows = list(pool.map(judge_and_report, scenarios))
+    print(f"  {name}: {len(scenarios)}/{len(scenarios)} scenarios, done")
+    return rows
 
 
 def share(rows: list[dict], test) -> str:
@@ -159,7 +175,9 @@ if __name__ == "__main__":
     # Every scenario is judged against the starting workspace. Reviewers only
     # look; nothing is run, so one reset covers all of them.
     reset_workspace()
-    print(f"{len(scenarios)} scenarios, reviewers: {', '.join(chosen)}\n")
+    print(f"{len(scenarios)} scenarios, reviewers: {', '.join(chosen)}")
+    print(f"At most {MAX_MODEL_CALLS_PER_SCENARIO_PER_REVIEWER * len(scenarios) * len(chosen)} model calls "
+          "(plus at most 2 retries each, after a 30-second timeout).\n")
 
     results = {name: run_reviewer(name, scenarios) for name in chosen}
     scores = {name: score(rows) for name, rows in results.items()}

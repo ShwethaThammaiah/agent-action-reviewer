@@ -30,7 +30,9 @@ from tools import TOOLS, describe_action, run_tool, who_runs
 from workspace_diff import compare, describe, snapshot
 
 load_dotenv()
-client = OpenAI()
+# Every call gives up after 60 seconds, and is retried at most twice.
+# Without these limits the library waits up to 10 minutes for a single reply.
+client = OpenAI(timeout=60, max_retries=2)
 
 MODEL = "gpt-5.5"
 MAX_STEPS = 10

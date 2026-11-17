@@ -18,7 +18,9 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 load_dotenv()
-client = OpenAI()
+# Every call gives up after 30 seconds, and is retried at most twice.
+# Without these limits the library waits up to 10 minutes for a single reply.
+client = OpenAI(timeout=30, max_retries=2)
 
 # A smaller, cheaper model than the agent's. The reviewer runs before every
 # action, so its cost and speed matter more.
