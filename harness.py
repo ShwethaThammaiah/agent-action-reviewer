@@ -11,20 +11,26 @@ Run with:
     python harness.py model-with-task      one reviewer
 """
 
+import hashlib
 import json
 import statistics
+import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from reset_workspace import reset_workspace
+import reviewer
 from reviewer import review
 from rule_reviewer import review_by_rules
 from combined_reviewer import review_combined
 
 SCENARIOS_FILE = Path(__file__).parent / "scenarios" / "scenarios.json"
 RESULTS_FILE = Path(__file__).parent / "results" / "harness_results.json"
+RUNS_FOLDER = Path(__file__).parent / "results" / "runs"
+HISTORY_FILE = Path(__file__).parent / "results" / "history.jsonl"
 
 # Each reviewer is a function that takes one scenario and returns a decision.
 REVIEWERS = {
@@ -97,6 +103,29 @@ def score(rows: list[dict]) -> dict:
     }
 
 
+def fingerprint(text: str) -> str:
+    """A short code that changes whenever the text changes."""
+    return hashlib.sha256(text.encode()).hexdigest()[:8]
+
+
+def run_details() -> dict:
+    """What this run was made from, so a change in results can be traced to a change in inputs."""
+    def git(*args):
+        return subprocess.run(["git", *args], capture_output=True, text=True).stdout.strip()
+
+    # Uncommitted changes to the code, ignoring results and the workspace.
+    changed = [line[3:] for line in git("status", "--porcelain").splitlines()
+               if not line[3:].startswith(("results/", "workspace/"))]
+    return {
+        "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "commit": git("rev-parse", "--short", "HEAD"),
+        "uncommitted_changes": changed,
+        "scenarios_version": fingerprint(SCENARIOS_FILE.read_text()),
+        "reviewer_model": reviewer.REVIEWER_MODEL,
+        "reviewer_instructions_version": fingerprint(reviewer.REVIEWER_INSTRUCTIONS),
+    }
+
+
 def print_table(scores: dict[str, dict]) -> None:
     names = list(scores)
     measures = list(next(iter(scores.values())))
@@ -129,6 +158,22 @@ if __name__ == "__main__":
     for name, rows in results.items():
         print_mistakes(name, rows)
 
+    details = run_details()
+    output = json.dumps({"run": details, "scores": scores, "rows": results}, indent=2) + "\n"
+
+    # The latest run, as before.
     RESULTS_FILE.parent.mkdir(exist_ok=True)
-    RESULTS_FILE.write_text(json.dumps({"scores": scores, "rows": results}, indent=2) + "\n")
-    print(f"\nFull results saved to {RESULTS_FILE.relative_to(Path(__file__).parent)}")
+    RESULTS_FILE.write_text(output)
+
+    # Every run kept in full, named by its time, so nothing is overwritten.
+    RUNS_FOLDER.mkdir(exist_ok=True)
+    run_file = RUNS_FOLDER / f"{details['time'].replace(':', '-')}.json"
+    run_file.write_text(output)
+
+    # One summary line per run, for comparing runs over time (see history.py).
+    with HISTORY_FILE.open("a") as history:
+        history.write(json.dumps({**details, "scores": scores}) + "\n")
+
+    print(f"\nFull results saved to {run_file.relative_to(Path(__file__).parent)}")
+    if details["uncommitted_changes"]:
+        print("Note: this run used uncommitted code changes:", ", ".join(details["uncommitted_changes"]))
