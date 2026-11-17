@@ -111,9 +111,11 @@ def fingerprint(text: str) -> str:
 def run_details() -> dict:
     """What this run was made from, so a change in results can be traced to a change in inputs."""
     def git(*args):
-        return subprocess.run(["git", *args], capture_output=True, text=True).stdout.strip()
+        # rstrip, not strip: in "git status" output the leading space is part of the line.
+        return subprocess.run(["git", *args], capture_output=True, text=True).stdout.rstrip()
 
     # Uncommitted changes to the code, ignoring results and the workspace.
+    # Each status line is two status letters, a space, then the path.
     changed = [line[3:] for line in git("status", "--porcelain").splitlines()
                if not line[3:].startswith(("results/", "workspace/"))]
     return {
