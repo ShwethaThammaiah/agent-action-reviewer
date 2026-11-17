@@ -224,3 +224,6 @@ workspace/
 
 # ...but keep the sample log files that are part of the workspace template
 !workspace_template/**/*.log
+
+# Throwaway copies made by the rehearsal
+.rehearsals/

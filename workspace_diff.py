@@ -14,18 +14,32 @@ from pathlib import Path
 from sandbox import WORKSPACE
 
 
-def snapshot() -> dict[str, str]:
-    """Return {file path: fingerprint of its content} for every file in the workspace."""
+def snapshot(folder: Path = WORKSPACE) -> dict[str, str]:
+    """Return {file path: fingerprint and size of its content} for every file in the folder.
+
+    The size (lines and bytes) is kept so a change can be described, such as
+    "3 lines (84 bytes) before, 1 line (22 bytes) after".
+    """
     files = {}
-    for path in sorted(WORKSPACE.rglob("*")):
-        name = str(path.relative_to(WORKSPACE))
+    for path in sorted(folder.rglob("*")):
+        name = str(path.relative_to(folder))
         if path.is_symlink():
             # Record where a link points, but never follow it: a link made inside
             # the sandbox could point at a file outside the workspace.
             files[name] = f"link to {path.readlink()}"
         elif path.is_file():
-            files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            content = path.read_bytes()
+            lines = content.count(b"\n") + (1 if content and not content.endswith(b"\n") else 0)
+            files[name] = f"{hashlib.sha256(content).hexdigest()} {lines} {len(content)}"
     return files
+
+
+def size(fingerprint: str) -> str:
+    """'<hash> 3 84' becomes '3 lines, 84 bytes'."""
+    if fingerprint.startswith("link to"):
+        return fingerprint
+    _, lines, length = fingerprint.split()
+    return f"{lines} line{'s' if lines != '1' else ''}, {length} bytes"
 
 
 def compare(before: dict[str, str], after: dict[str, str]) -> dict[str, list[str]]:

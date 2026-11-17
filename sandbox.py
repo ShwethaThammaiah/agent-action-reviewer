@@ -17,18 +17,21 @@ IMAGE = "python:3.12-slim"
 TIMEOUT_SECONDS = 30
 
 
-def run_in_sandbox(command: str, stdin_text: str | None = None) -> str:
+def run_in_sandbox(command: str, stdin_text: str | None = None, workspace: Path = WORKSPACE) -> str:
     """Run a shell command in the sandbox. Return its exit code and output as text.
 
     stdin_text, if given, is fed to the command as its input. write_file uses
     this to pass a file's content into the container.
+
+    workspace is the folder shared with the container. Normally the real
+    workspace; the rehearsal passes a throwaway copy instead.
     """
     docker_command = [
         "docker", "run",
         "--rm",                             # delete the container when the command ends
         *(["-i"] if stdin_text is not None else []),  # keep input open only when there is input
         "--network", "none",                # no internet access
-        "-v", f"{WORKSPACE}:/workspace",    # the one shared folder
+        "-v", f"{workspace}:/workspace",    # the one shared folder
         "-w", "/workspace",                 # start inside that folder
         IMAGE,
         "sh", "-c", command,                # the command itself, run by a shell

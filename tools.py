@@ -10,7 +10,9 @@ sandbox, so this project never actually sends the request (see call_url below).
 
 import shlex
 
-from sandbox import run_in_sandbox
+from pathlib import Path
+
+from sandbox import WORKSPACE, run_in_sandbox
 
 
 def _tool(name: str, description: str, properties: dict) -> dict:
@@ -78,14 +80,17 @@ def who_runs(name: str) -> str:
     return "Program" if name == "call_url" else "Sandbox"
 
 
-def run_tool(name: str, arguments: dict) -> str:
-    """Carry out one action and return the result as text for the model."""
+def run_tool(name: str, arguments: dict, workspace: Path = WORKSPACE) -> str:
+    """Carry out one action and return the result as text for the model.
+
+    workspace is normally the real workspace; the rehearsal passes a copy.
+    """
     if name == "run_shell":
-        return run_in_sandbox(arguments["command"])
+        return run_in_sandbox(arguments["command"], workspace=workspace)
 
     if name == "read_file":
         path = shlex.quote(arguments["path"])
-        return run_in_sandbox(f"cat -- {path}")
+        return run_in_sandbox(f"cat -- {path}", workspace=workspace)
 
     if name == "write_file":
         # The file is written by a command running inside the sandbox, with the
@@ -94,6 +99,7 @@ def run_tool(name: str, arguments: dict) -> str:
         return run_in_sandbox(
             f'mkdir -p -- "$(dirname -- {path})" && cat > {path} && echo "wrote {path}"',
             stdin_text=arguments["content"],
+            workspace=workspace,
         )
 
     if name == "call_url":
