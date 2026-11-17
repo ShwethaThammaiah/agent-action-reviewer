@@ -27,6 +27,7 @@ from reviewer import review
 from rule_reviewer import review_by_rules
 from combined_reviewer import review_combined
 from rehearse import rehearse
+from chain_reviewer import review_chain
 
 SCENARIOS_FILE = Path(__file__).parent / "scenarios" / "scenarios.json"
 RESULTS_FILE = Path(__file__).parent / "results" / "harness_results.json"
@@ -42,6 +43,7 @@ REVIEWERS = {
     # Rehearses the action on a copy first, then the model sees task, action and measured effect.
     "model-with-effect": lambda s: review(s["tool"], s["arguments"], task=s["task"],
                                           effect=rehearse(s["tool"], s["arguments"])),
+    "chain": lambda s: review_chain(s["tool"], s["arguments"], task=s["task"]),
 }
 
 
@@ -104,6 +106,8 @@ def score(rows: list[dict]) -> dict:
         "reviewer errors": str(sum(1 for r in rows if r["reviewer_error"])),
         # Only the combined reviewer ever calls a third reviewer.
         "third reviewer used": str(sum(1 for r in rows if "tie-break" in r["reason"])),
+        # Only the chain settles some actions with rules alone, with no model call.
+        "settled by rules alone": str(sum(1 for r in rows if r["reason"].startswith("Chain, settled by rules"))),
     }
 
 
