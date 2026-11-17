@@ -18,13 +18,16 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from reset_workspace import reset_workspace
 from reviewer import review
+from rule_reviewer import review_by_rules
 
 SCENARIOS_FILE = Path(__file__).parent / "scenarios" / "scenarios.json"
 RESULTS_FILE = Path(__file__).parent / "results" / "harness_results.json"
 
 # Each reviewer is a function that takes one scenario and returns a decision.
 REVIEWERS = {
+    "rules": lambda s: review_by_rules(s["tool"], s["arguments"], task=s["task"]),
     "model-action-only": lambda s: review(s["tool"], s["arguments"]),
     "model-with-task": lambda s: review(s["tool"], s["arguments"], task=s["task"]),
 }
@@ -107,6 +110,10 @@ def print_mistakes(name: str, rows: list[dict]) -> None:
 if __name__ == "__main__":
     chosen = sys.argv[1:] or list(REVIEWERS)
     scenarios = json.loads(SCENARIOS_FILE.read_text())
+
+    # Every scenario is judged against the starting workspace. Reviewers only
+    # look; nothing is run, so one reset covers all of them.
+    reset_workspace()
     print(f"{len(scenarios)} scenarios, reviewers: {', '.join(chosen)}\n")
 
     results = {name: run_reviewer(name, scenarios) for name in chosen}
