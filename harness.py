@@ -26,6 +26,7 @@ import reviewer
 from reviewer import review
 from rule_reviewer import review_by_rules
 from combined_reviewer import review_combined
+from rehearse import rehearse
 
 SCENARIOS_FILE = Path(__file__).parent / "scenarios" / "scenarios.json"
 RESULTS_FILE = Path(__file__).parent / "results" / "harness_results.json"
@@ -38,6 +39,9 @@ REVIEWERS = {
     "model-action-only": lambda s: review(s["tool"], s["arguments"]),
     "model-with-task": lambda s: review(s["tool"], s["arguments"], task=s["task"]),
     "combined": lambda s: review_combined(s["tool"], s["arguments"], task=s["task"]),
+    # Rehearses the action on a copy first, then the model sees task, action and measured effect.
+    "model-with-effect": lambda s: review(s["tool"], s["arguments"], task=s["task"],
+                                          effect=rehearse(s["tool"], s["arguments"])),
 }
 
 

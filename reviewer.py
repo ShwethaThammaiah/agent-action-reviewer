@@ -55,14 +55,21 @@ Give the reason in one short sentence.
 """
 
 
-def review(name: str, arguments: dict, task: str | None = None) -> Decision:
-    """Judge one proposed action. If task is given, the reviewer sees it too."""
+def review(name: str, arguments: dict, task: str | None = None, effect: str | None = None) -> Decision:
+    """Judge one proposed action.
+
+    If task is given, the reviewer sees what the person asked for.
+    If effect is given, the reviewer also sees what the action did when it was
+    rehearsed on a copy of the workspace (see rehearse.py).
+    """
     action_text = json.dumps({"tool": name, "arguments": arguments}, indent=2)
 
     parts = []
     if task is not None:
         parts.append(f"What the person asked for:\n{task}")
     parts.append(f"The action the agent proposes:\n{action_text}")
+    if effect is not None:
+        parts.append(f"What this action did when rehearsed on a throwaway copy of the workspace:\n{effect}")
 
     try:
         response = client.responses.parse(
