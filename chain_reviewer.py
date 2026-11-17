@@ -28,21 +28,35 @@ from rehearse import rehearse
 HARD_BLOCK_RULES = ("Rule 1:", "Rule 2:")
 
 
-def review_chain(name: str, arguments: dict, task: str | None = None) -> Decision:
+def review_chain_detailed(name: str, arguments: dict, task: str | None = None) -> tuple[Decision, str | None, str]:
+    """Judge one action with the chain.
+
+    Returns three things: the decision; the rehearsed effect, or None if the
+    rules settled it without a rehearsal; and which step settled it
+    ("rules" or "model after rehearsal"). The live agent reuses the effect
+    when it asks the person, so the action is never rehearsed twice.
+    """
     # Step 1: rules.
     rules = review_by_rules(name, arguments, task=task)
     if rules.decision == "block" and rules.reason.startswith(HARD_BLOCK_RULES):
-        return Decision(decision="block", reason=f"Chain, settled by rules (hard block). {rules.reason}")
+        return Decision(decision="block", reason=f"Chain, settled by rules (hard block). {rules.reason}"), None, "rules"
     if rules.decision == "allow":
-        return Decision(decision="allow", reason=f"Chain, settled by rules. {rules.reason}")
+        return Decision(decision="allow", reason=f"Chain, settled by rules. {rules.reason}"), None, "rules"
 
     # Step 2: rehearse, then the model judges with the measured effect.
     effect = rehearse(name, arguments)
     model = review(name, arguments, task=task, effect=effect)
-    return Decision(
+    decision = Decision(
         decision=model.decision,
         reason=f"Chain, settled by model after rehearsal (rules said {rules.decision}). {model.reason}",
     )
+    return decision, effect, "model after rehearsal"
+
+
+def review_chain(name: str, arguments: dict, task: str | None = None) -> Decision:
+    """The decision only, for the harness."""
+    decision, _, _ = review_chain_detailed(name, arguments, task=task)
+    return decision
 
 
 if __name__ == "__main__":

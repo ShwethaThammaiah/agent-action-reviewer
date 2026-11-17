@@ -6,11 +6,12 @@ Connects the two earlier pieces:
 and adds the loop: the result goes back to the model, which then
 proposes the next action, until it says the task is finished.
 
-Before any action is carried out, the reviewer judges it (reviewer.py):
+Before any action is carried out, the chain judges it (chain_reviewer.py):
+rules first, then, only if needed, a rehearsal on a copy of the workspace and
+the reviewer model.
   allow -> the action runs
   block -> the action does not run, and the agent is told why
-  ask   -> the action is rehearsed on a copy of the workspace (rehearse.py),
-           the person sees what it would do, and decides
+  ask   -> the person sees what the rehearsal measured, and decides
 
 Run with:  python agent.py "your task in plain words"
 """
@@ -24,8 +25,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from decision_log import record
-from rehearse import rehearse
-from reviewer import review
+from chain_reviewer import review_chain_detailed
 from tools import TOOLS, describe_action, run_tool, who_runs
 from workspace_diff import compare, describe, snapshot
 
@@ -36,10 +36,6 @@ client = OpenAI(timeout=60, max_retries=2)
 
 MODEL = "gpt-5.5"
 MAX_STEPS = 10
-
-# True: the reviewer is shown the person's task as well as the action.
-# False: the reviewer sees only the action.
-REVIEWER_SEES_TASK = True
 
 # Standing instructions the model gets on every request.
 INSTRUCTIONS = (
@@ -99,14 +95,14 @@ def run_agent(task: str) -> None:
             action_number += 1
             say("Agent model", f"Action {action_number}, proposes {describe_action(name, arguments)}")
 
-            # The reviewer judges the proposal before anything runs. Time how long it takes.
+            # The chain judges the proposal before anything runs: rules first, then,
+            # only if the rules cannot settle it, a rehearsal and the reviewer model.
             started = time.perf_counter()
-            verdict = review(name, arguments, task=task if REVIEWER_SEES_TASK else None)
+            verdict, effect, settled_by = review_chain_detailed(name, arguments, task=task)
             review_seconds = round(time.perf_counter() - started, 2)
-            say("Reviewer model", f"{verdict.decision}: {verdict.reason}")
+            say("Rules" if settled_by == "rules" else "Reviewer model", f"{verdict.decision}: {verdict.reason}")
 
             changes = None  # stays None when the action does not run
-            effect = None   # only rehearsed when the person is about to be asked
 
             if verdict.decision == "allow":
                 result, changes = run_and_compare(name, arguments)
@@ -116,8 +112,7 @@ def run_agent(task: str) -> None:
                 outcome = "blocked"
                 say("Program", "Action not run. Telling the agent model it was blocked.")
             else:  # "ask": the person decides, after seeing what the action would do
-                effect = rehearse(name, arguments)
-                say("Rehearsal", effect)
+                say("Rehearsal", effect)   # already measured by the chain, not rehearsed again
                 answer = input(f"{'[Program]':<17} Allow this action? Type y to allow, anything else to refuse: ")
                 if answer.strip().lower() == "y":
                     say("Person", "Allowed.")
@@ -136,7 +131,8 @@ def run_agent(task: str) -> None:
                 task=task,
                 tool=name,
                 arguments=arguments,
-                reviewer_saw_task=REVIEWER_SEES_TASK,
+                reviewer="chain",
+                settled_by=settled_by,
                 decision=verdict.decision,
                 reason=verdict.reason,
                 review_seconds=review_seconds,
