@@ -9,7 +9,8 @@ proposes the next action, until it says the task is finished.
 Before any action is carried out, the reviewer judges it (reviewer.py):
   allow -> the action runs
   block -> the action does not run, and the agent is told why
-  ask   -> the person at the terminal decides
+  ask   -> the action is rehearsed on a copy of the workspace (rehearse.py),
+           the person sees what it would do, and decides
 
 Run with:  python agent.py "your task in plain words"
 """
@@ -23,6 +24,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from decision_log import record
+from rehearse import rehearse
 from reviewer import review
 from tools import TOOLS, describe_action, run_tool, who_runs
 from workspace_diff import compare, describe, snapshot
@@ -102,6 +104,7 @@ def run_agent(task: str) -> None:
             say("Reviewer model", f"{verdict.decision}: {verdict.reason}")
 
             changes = None  # stays None when the action does not run
+            effect = None   # only rehearsed when the person is about to be asked
 
             if verdict.decision == "allow":
                 result, changes = run_and_compare(name, arguments)
@@ -110,7 +113,9 @@ def run_agent(task: str) -> None:
                 result = f"This action was blocked and did not run. Reason: {verdict.reason}"
                 outcome = "blocked"
                 say("Program", "Action not run. Telling the agent model it was blocked.")
-            else:  # "ask": the person decides
+            else:  # "ask": the person decides, after seeing what the action would do
+                effect = rehearse(name, arguments)
+                say("Rehearsal", effect)
                 answer = input(f"{'[Program]':<17} Allow this action? Type y to allow, anything else to refuse: ")
                 if answer.strip().lower() == "y":
                     say("Person", "Allowed.")
@@ -134,6 +139,7 @@ def run_agent(task: str) -> None:
                 reason=verdict.reason,
                 review_seconds=review_seconds,
                 outcome=outcome,
+                rehearsed_effect=effect,
                 workspace_changes=changes,
             )
 
