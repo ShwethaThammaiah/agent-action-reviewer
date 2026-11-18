@@ -227,3 +227,7 @@ workspace/
 
 # Throwaway copies made by the rehearsal
 .rehearsals/
+
+results/live_decisions.jsonl
+results/history.jsonl
+results/runs/
