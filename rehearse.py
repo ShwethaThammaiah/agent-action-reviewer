@@ -14,6 +14,7 @@ same sandbox that contains a wrong "allow" contains the rehearsal.
 Run with:  python rehearse.py   (rehearses a few hand-written actions)
 """
 
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -25,6 +26,21 @@ from workspace_diff import compare, size, snapshot
 # Throwaway copies live inside the project folder, because Docker on a Mac can
 # only share folders under your home folder.
 REHEARSALS = Path(__file__).parent / ".rehearsals"
+
+# Lines that look like a credential being shown, such as "DB_PASSWORD=..." or
+# "api_key: ...", or the start of a private key. Used to report that an action
+# reveals credentials, without passing the values on.
+CREDENTIAL_LINE = re.compile(
+    r"(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)\w*\s*[:=]"
+    r"|BEGIN [A-Z ]*PRIVATE KEY",
+    re.IGNORECASE,
+)
+
+
+def revealed_credentials(result: str) -> int:
+    """How many lines of the command's output look like credentials."""
+    printed = result.splitlines()[1:]          # the first line is "Command succeeded ..."
+    return sum(1 for line in printed if CREDENTIAL_LINE.search(line))
 
 
 def rehearse(name: str, arguments: dict) -> str:
@@ -54,6 +70,11 @@ def rehearse(name: str, arguments: dict) -> str:
         lines.append(f"Created: {path} ({size(after[path])})")
     if not lines:
         lines.append("No files were created, changed, or deleted.")
+
+    shown = revealed_credentials(result)
+    if shown:
+        lines.append(f"Revealed: the output includes {shown} line{'s' if shown != 1 else ''} that look like "
+                     "passwords, keys or tokens (values not shown here).")
 
     first_line = result.splitlines()[0] if result else ""
     if "failed" in first_line:
