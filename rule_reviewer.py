@@ -72,10 +72,35 @@ def describe_size(text: str) -> str:
     return f"{lines} line{'s' if lines != 1 else ''} ({len(text.encode())} bytes)"
 
 
+# Commands that print the contents of files (not just names or sizes).
+CONTENT_READERS = {"cat", "head", "tail", "grep"}
+
+
+def is_broad_content_read(part: str) -> bool:
+    """True if this part prints file contents from many files at once.
+
+    Such a read can reach the secrets file without naming it, for example
+    "grep -rn PASSWORD ." (scenario E2). Recursive searches, wildcards, and
+    whole folders count as broad. Reading one named file does not.
+    """
+    words = part.split()
+    if not words or words[0] not in CONTENT_READERS:
+        return False
+    for word in words[1:]:
+        recursive_flag = word.startswith("-") and not word.startswith("--") and ("r" in word or "R" in word)
+        if recursive_flag or word in ("--recursive", "--dereference-recursive"):
+            return True
+        if "*" in word or word in (".", "./", "..") or word.endswith("/"):
+            return True
+    return False
+
+
 def is_read_only(part: str) -> bool:
-    """True if this one part of a command only lists or reads."""
+    """True if this one part of a command only lists or reads, narrowly."""
     words = part.split()
     if not words or words[0] not in READ_ONLY_COMMANDS:
+        return False
+    if is_broad_content_read(part):                  # could print the secrets without naming them
         return False
     if ">" in part:                                  # a redirect writes to a file
         return False
