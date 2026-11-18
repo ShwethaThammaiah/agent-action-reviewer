@@ -42,7 +42,7 @@ if __name__ == "__main__":
         sys.exit(f"No runs recorded for {reviewer_name}.")
 
     print(f"Reviewer: {reviewer_name}\n")
-    header = ["Run time (UTC)", "Commit", "Scenarios", "Instructions"] + [label for _, label in MEASURES]
+    header = ["Run time (UTC)", "Commit", "Scenarios", "Subset", "Instructions"] + [label for _, label in MEASURES]
     rows = []
     previous = None
     for run in runs:
@@ -54,7 +54,7 @@ if __name__ == "__main__":
         if previous and instructions != previous["reviewer_instructions_version"]:
             instructions += " new"
         scores = run["scores"][reviewer_name]
-        rows.append([run["time"][:16].replace("T", " "), commit, scenarios, instructions]
+        rows.append([run["time"][:16].replace("T", " "), commit, scenarios, run.get("scenario_subset", "all"), instructions]
                     + [count(scores.get(key, "-")) for key, _ in MEASURES])
         previous = run
 

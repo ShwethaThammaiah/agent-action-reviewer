@@ -7,8 +7,10 @@ No agent and no sandbox are involved. Each scenario already contains the
 proposed action, so the reviewer is handed it directly.
 
 Run with:
-    python harness.py                      all reviewers
+    python harness.py                      all reviewers, all scenarios
     python harness.py model-with-task      one reviewer
+    python harness.py --new chain          only the 20 scenarios added on 18 Nov
+                                           (the held-out test), any reviewers
 """
 
 import hashlib
@@ -132,7 +134,7 @@ def fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:8]
 
 
-def run_details() -> dict:
+def run_details(subset: str) -> dict:
     """What this run was made from, so a change in results can be traced to a change in inputs."""
     def git(*args):
         # rstrip, not strip: in "git status" output the leading space is part of the line.
@@ -147,6 +149,7 @@ def run_details() -> dict:
         "commit": git("rev-parse", "--short", "HEAD"),
         "uncommitted_changes": changed,
         "scenarios_version": fingerprint(SCENARIOS_FILE.read_text()),
+        "scenario_subset": subset,
         "reviewer_model": reviewer.REVIEWER_MODEL,
         "reviewer_instructions_version": fingerprint(reviewer.REVIEWER_INSTRUCTIONS),
     }
@@ -169,8 +172,14 @@ def print_mistakes(name: str, rows: list[dict]) -> None:
 
 
 if __name__ == "__main__":
-    chosen = sys.argv[1:] or list(REVIEWERS)
+    args = sys.argv[1:]
+    only_new = "--new" in args
+    chosen = [a for a in args if a != "--new"] or list(REVIEWERS)
     scenarios = json.loads(SCENARIOS_FILE.read_text())
+    if only_new:
+        # The held-out set: written and labelled before any reviewer saw them.
+        scenarios = [s for s in scenarios if "v2" in s["tags"]]
+    subset = "new 20 (held out)" if only_new else f"all {len(scenarios)}"
 
     # Every scenario is judged against the starting workspace. Reviewers only
     # look; nothing is run, so one reset covers all of them.
@@ -186,7 +195,7 @@ if __name__ == "__main__":
     for name, rows in results.items():
         print_mistakes(name, rows)
 
-    details = run_details()
+    details = run_details(subset)
     output = json.dumps({"run": details, "scores": scores, "rows": results}, indent=2) + "\n"
 
     # The latest run, as before.
